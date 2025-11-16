@@ -2,8 +2,16 @@ import { buildOctahedralMesh } from "./octahedralHelper";
 
 const samplingCache = new Map();
 
-function encodeDirectionToOctUV(direction) {
-  const { x, y, z } = direction;
+function encodeDirectionToOctUV(direction, octType) {
+  // Direction passed in is from camera to object, but the atlas was baked
+  // using vectors from the object origin *towards the camera* (pntOct).
+  // To get a consistent mapping we must invert the direction here so that
+  // it lives in the same space as the bake directions. (English comment)
+  const x = direction.x;
+  const y = direction.y;
+  const z = direction.z;
+
+  // Common normalization for both modes
   const absX = Math.abs(x);
   const absY = Math.abs(y);
   const absZ = Math.abs(z);
@@ -13,19 +21,52 @@ function encodeDirectionToOctUV(direction) {
   let ny = y * invSum;
   let nz = z * invSum;
 
-  if (ny < 0) {
-    const signX = nx >= 0 ? 1 : -1;
-    const signZ = nz >= 0 ? 1 : -1;
-    const newX = (1 - Math.abs(nz)) * signX;
-    const newZ = (1 - Math.abs(nx)) * signZ;
-    nx = newX;
-    nz = newZ;
-  }
+  if (octType === 0) {
+    // HEMI mode: only use upper hemisphere (y >= 0)
+    // When looking from above (y < 0), map to horizontal view (y = 0)
+    // while preserving x and z orientation to avoid rotation inversion
+    if (ny < 0) {
+      // Set y to 0 (horizontal view) and renormalize x and z
+      // This preserves the horizontal orientation without inverting rotation
+      ny = 0;
+      const len = Math.sqrt(nx * nx + nz * nz);
+      if (len > 1e-9) {
+        nx /= len;
+        nz /= len;
+      } else {
+        // Fallback if x and z are both near zero
+        nx = 0;
+        nz = 1;
+      }
+    }
 
-  return {
-    u: nx * 0.5 + 0.5,
-    v: nz * 0.5 + 0.5,
-  };
+    // Convert to UV using the inverse of octHemi
+    // From octHemi: x = ox - oy, z = -1 + ox + oy
+    // Solving: ox = (x + z + 1) / 2, oy = (z + 1 - x) / 2
+    const ox = (nx + nz + 1) / 2;
+    const oy = (nz + 1 - nx) / 2;
+
+    return {
+      u: Math.max(0, Math.min(1, ox)),
+      v: Math.max(0, Math.min(1, oy)),
+    };
+  } else {
+    // FULL mode: standard octahedral encoding
+    // Handle lower hemisphere
+    if (ny < 0) {
+      const signX = nx >= 0 ? 1 : -1;
+      const signZ = nz >= 0 ? 1 : -1;
+      const newX = (1 - Math.abs(nz)) * signX;
+      const newZ = (1 - Math.abs(nx)) * signZ;
+      nx = newX;
+      nz = newZ;
+    }
+
+    return {
+      u: nx * 0.5 + 0.5,
+      v: nz * 0.5 + 0.5,
+    };
+  }
 }
 
 function computeBarycentric2D(px, py, triangleUV, target) {
@@ -170,7 +211,7 @@ export function sampleOctahedralDirection({
 }) {
   if (!cache) return false;
 
-  const uv = encodeDirectionToOctUV(direction);
+  const uv = encodeDirectionToOctUV(direction, cache.octType);
   const gridSize = cache.gridSize;
 
   const scaledU = uv.u * gridSize;
@@ -202,5 +243,3 @@ export function sampleOctahedralDirection({
 
   return true;
 }
-
-

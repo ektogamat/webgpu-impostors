@@ -4,7 +4,7 @@ import { Environment } from "@react-three/drei";
 export default function SceneLight() {
   return (
     <>
-      <color attach="background" args={["#ffffff"]} />
+      <color attach="background" args={["#666971"]} />
       <directionalLight
         castShadow
         intensity={3}
@@ -21,7 +21,7 @@ export default function SceneLight() {
       />
 
       <Suspense fallback={null}>
-        <Environment preset="forest" />
+        <Environment preset="city" />
       </Suspense>
     </>
   );

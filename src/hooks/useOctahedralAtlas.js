@@ -3,7 +3,7 @@ import * as THREE from "three/webgpu";
 import * as THREEGL from "three"; // WebGL version for pixel reading
 import { useThree } from "@react-three/fiber";
 import { buildOctahedralMesh, OCT_TYPE } from "../utils/octahedralHelper";
-
+import { useEnvironment, useGLTF } from "@react-three/drei";
 /**
  * Cache storage shared across impostor instances. (English comment)
  */
@@ -44,8 +44,16 @@ export function useOctahedralAtlas({
   const [atlas, setAtlas] = useState(null);
   const [error, setError] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
-
+  const environment = useEnvironment({ preset: "city" });
   const octahedralDataRef = useRef(null);
+
+  // Get model path from mesh userData (same way drei stores it)
+  const modelPath = mesh?.userData?.__impostorSourceId || null;
+
+  // Load the GLTF model using drei's useGLTF (same method as TreeOctahedralImpostor)
+  // This ensures we get the original, unmodified model
+  // useGLTF must always be called (hooks rule), but we'll only use it if modelPath exists
+  const gltfScene = useGLTF(modelPath || "/dummy.glb"); // Dummy path if no modelPath
 
   // Build octahedral mesh data
   const octahedralData = useMemo(() => {
@@ -62,7 +70,15 @@ export function useOctahedralAtlas({
 
   // Generate atlas
   useEffect(() => {
-    if (!enabled || !mesh || !octahedralData || !gl) {
+    // Wait for gltfScene to load if using modelPath
+    if (modelPath && (!gltfScene || !gltfScene.scene)) {
+      return; // Still loading
+    }
+
+    // Only proceed if we have either mesh or a valid gltfScene
+    const hasValidSource = mesh || (modelPath && gltfScene?.scene);
+
+    if (!enabled || !hasValidSource || !octahedralData || !gl) {
       setAtlas(null);
       return;
     }
@@ -99,12 +115,13 @@ export function useOctahedralAtlas({
 
     try {
       const atlasPromise = generateAtlas({
-        mesh,
+        environment,
+        gltfScene: modelPath ? gltfScene : null, // Use loaded scene if modelPath exists
+        mesh, // Keep mesh for cache key
         octahedralData,
         gridSize,
         atlasSize,
         gl,
-        scene,
         camera,
       }).then(
         (texture) => {
@@ -148,6 +165,8 @@ export function useOctahedralAtlas({
     }
   }, [
     mesh,
+    gltfScene,
+    modelPath,
     octahedralData,
     gridSize,
     atlasSize,
@@ -156,6 +175,7 @@ export function useOctahedralAtlas({
     scene,
     camera,
     octType,
+    environment,
   ]);
 
   return {
@@ -171,42 +191,120 @@ export function useOctahedralAtlas({
  * @param {Object} params - Generation parameters
  */
 async function generateAtlas({
+  environment,
+  gltfScene,
   mesh,
   octahedralData,
   gridSize,
   atlasSize,
   gl,
-  scene,
   camera,
 }) {
-  // Clone mesh/group for rendering
-  // mesh can be a single Mesh or a Group containing multiple meshes
-  const renderMesh =
-    mesh instanceof THREE.Group
-      ? mesh.clone()
-      : (() => {
-          const group = new THREE.Group();
-          group.add(mesh.clone());
-          return group;
-        })();
+  // Use the same method as TreeOctahedralImpostor: load from gltfScene and create group
+  // This ensures we get all meshes correctly, same as drei's useGLTF
+  const renderGroup = new THREE.Group();
+  let meshCount = 0;
+
+  // Use gltfScene if available (loaded with drei's useGLTF), otherwise fallback to mesh
+  const sourceScene = gltfScene?.scene || mesh;
+
+  if (sourceScene) {
+    sourceScene.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        // Clone each mesh exactly as TreeOctahedralImpostor does
+        const clonedMesh = child.clone();
+        // Clone geometry to avoid affecting source
+        clonedMesh.geometry = child.geometry.clone();
+        // Clone material to avoid affecting source
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            clonedMesh.material = child.material.map((mat) => mat.clone());
+          } else {
+            clonedMesh.material = child.material.clone();
+          }
+        }
+        renderGroup.add(clonedMesh);
+        meshCount++;
+        console.log(
+          `Atlas generation: Cloning mesh ${meshCount}: ${
+            child.name || "unnamed"
+          }`
+        );
+      }
+    });
+  }
+
+  const renderMesh = renderGroup;
   renderMesh.visible = true;
+
+  console.log(
+    `Atlas generation: Cloned ${meshCount} meshes from ${
+      gltfScene ? "gltfScene" : "mesh"
+    }`
+  );
 
   // Create isolated scene for offscreen rendering
   const renderScene = new THREE.Scene();
 
-  // Add lighting
-  // const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
-  // renderScene.add(ambientLight);
-
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-  directionalLight.position.set(5, 1, 7.5);
+  // Add lighting - match main scene (no ambient, directional at (0, 4, 8))
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
+  directionalLight.position.set(0, 4, 8);
   renderScene.add(directionalLight);
+
+  // Use environment map from main scene if available (matches Environment preset)
+  // The Environment component from drei sets scene.environment automatically
+  if (environment) {
+    renderScene.environment = environment;
+    console.log("Atlas generation: Using environment map from main scene");
+  } else {
+    console.warn(
+      "Atlas generation: No environment map found in main scene. Environment may still be loading."
+    );
+  }
 
   renderScene.add(renderMesh);
 
   // Center geometry origin to bounding sphere (like original)
+  // IMPORTANT: Clone geometry AND material instances before mutating them, otherwise
+  // GLTF shared geometries/materials will be modified and the original model will
+  // appear distorted in the main scene. (English comment)
+  let processedMeshCount = 0;
   renderMesh.traverse((node) => {
     if (node instanceof THREE.Mesh && node.geometry) {
+      processedMeshCount++;
+      // Clone geometry to avoid affecting the source GLTF meshes
+      node.geometry = node.geometry.clone();
+
+      // CRITICAL: Clone materials before modifying them, otherwise we modify
+      // the original GLTF materials that are shared with the main scene
+      if (node.material) {
+        if (Array.isArray(node.material)) {
+          // Clone each material in the array
+          node.material = node.material.map((mat) => mat.clone());
+        } else {
+          // Clone single material
+          node.material = node.material.clone();
+        }
+      }
+
+      // Now configure the cloned materials safely
+      if (node.material) {
+        const materials = Array.isArray(node.material)
+          ? node.material
+          : [node.material];
+        materials.forEach((mat) => {
+          if (mat && mat.isMeshStandardMaterial) {
+            // Use environment map if available
+            if (environment) {
+              mat.envMap = environment;
+            }
+            // Configure tone mapping to match impostor material settings
+            mat.toneMapped = true;
+            mat.needsUpdate = true;
+          }
+        });
+      }
+
       const geometry = node.geometry;
       geometry.computeBoundingSphere();
       if (geometry.boundingSphere) {
@@ -218,6 +316,9 @@ async function generateAtlas({
       }
     }
   });
+  console.log(
+    `Atlas generation: Processed ${processedMeshCount} meshes for centering`
+  );
 
   // Compute bounding sphere after centering
   const boundingSphere = new THREE.Sphere();
@@ -247,7 +348,7 @@ async function generateAtlas({
     orthoSize,
     -orthoSize,
     0.001,
-    10
+    100
   );
 
   // Save original render state
@@ -283,19 +384,51 @@ async function generateAtlas({
   const tempGlRenderer = new THREEGL.WebGLRenderer({
     canvas: tempCanvas,
     preserveDrawingBuffer: true,
-    antialias: false,
+    antialias: true,
   });
 
   tempGlRenderer.setSize(cellSize, cellSize);
   tempGlRenderer.setClearColor(0x000000, 0);
 
+  // Match main renderer settings for consistent color output
+  // Copy tone mapping and color space settings from main renderer
+  if (gl && gl.toneMapping !== undefined) {
+    tempGlRenderer.toneMapping = gl.toneMapping;
+  } else {
+    // Default: disable tone mapping to match impostor material (toneMapped = false)
+    tempGlRenderer.toneMapping = THREEGL.NoToneMapping;
+  }
+
+  if (gl && gl.toneMappingExposure !== undefined) {
+    tempGlRenderer.toneMappingExposure = gl.toneMappingExposure;
+  } else {
+    tempGlRenderer.toneMappingExposure = 1.0;
+  }
+
+  // Handle color space / output encoding
+  if (gl && gl.outputColorSpace !== undefined) {
+    tempGlRenderer.outputColorSpace = gl.outputColorSpace;
+  } else if (gl && gl.outputEncoding !== undefined) {
+    // Fallback for older Three.js versions
+    tempGlRenderer.outputEncoding = gl.outputEncoding;
+  } else {
+    // Default to sRGB
+    tempGlRenderer.outputColorSpace = THREEGL.SRGBColorSpace;
+  }
+
   // Create reusable WebGL scene and lighting (created once)
+  // Match main scene: no ambient light, directional at (0, 4, 8)
   const glRenderScene = new THREEGL.Scene();
-  // const glAmbientLight = new THREEGL.AmbientLight(0xffffff, 0.2);
-  // glRenderScene.add(glAmbientLight);
-  const glDirectionalLight = new THREEGL.DirectionalLight(0xffffff, 0.5);
-  glDirectionalLight.position.set(5, 1, 7.5);
+
+  const glDirectionalLight = new THREEGL.DirectionalLight(0xffffff, 3);
+  glDirectionalLight.position.set(0, 4, 8);
   glRenderScene.add(glDirectionalLight);
+
+  // Use environment map from main scene if available (matches Environment preset)
+  // The Environment component from drei sets scene.environment automatically
+  if (environment) {
+    glRenderScene.environment = environment;
+  }
 
   // Create reusable WebGL camera
   const glRenderCam = new THREEGL.OrthographicCamera(
@@ -304,11 +437,56 @@ async function generateAtlas({
     orthoSize,
     -orthoSize,
     0.001,
-    10
+    100
   );
 
-  // Clone mesh once for WebGL rendering
-  const glRenderMesh = renderMesh.clone();
+  // Clone mesh once for WebGL rendering using deep clone
+  // renderMesh already has cloned materials, but we need to ensure
+  // materials are cloned for WebGL version (THREEGL) as well
+  const glRenderMesh = renderMesh.clone(true); // Deep clone to preserve all meshes
+
+  // Debug: Count meshes in WebGL clone
+  let glMeshCount = 0;
+  glRenderMesh.traverse((node) => {
+    if (node instanceof THREEGL.Mesh) {
+      glMeshCount++;
+    }
+  });
+  console.log(`Atlas generation: WebGL clone has ${glMeshCount} meshes`);
+
+  // Ensure materials are cloned for WebGL renderer (they should be from renderMesh, but ensure)
+  glRenderMesh.traverse((node) => {
+    if (node instanceof THREEGL.Mesh && node.material) {
+      // Materials should already be cloned from renderMesh, but clone again to be safe
+      // This ensures we don't modify materials that might be shared
+      if (Array.isArray(node.material)) {
+        node.material = node.material.map((mat) => mat.clone());
+      } else {
+        node.material = node.material.clone();
+      }
+    }
+  });
+
+  // Now configure the cloned materials safely
+  glRenderMesh.traverse((node) => {
+    if (node instanceof THREEGL.Mesh && node.material) {
+      const materials = Array.isArray(node.material)
+        ? node.material
+        : [node.material];
+      materials.forEach((mat) => {
+        if (mat && mat.isMeshStandardMaterial) {
+          // Use environment map if available
+          if (environment) {
+            mat.envMap = environment;
+          }
+          // Configure tone mapping to match impostor material settings
+          mat.toneMapped = true;
+          mat.needsUpdate = true;
+        }
+      });
+    }
+  });
+
   glRenderScene.add(glRenderMesh);
 
   // Render each cell
@@ -325,16 +503,19 @@ async function generateAtlas({
 
       const viewDir = new THREE.Vector3(px, py, pz).normalize();
 
-      // Position camera - EXACTLY AS ORIGINAL
-      // Original: renderCam.position.copy(viewDir.multiplyScalar(1.1));
-      // Original: renderCam.lookAt(centerX, centerY, centerZ); // Always look at bounding sphere center
-      const cameraDistance = 1.1; // Original uses 1.1
+      // Position camera - match original distance
+      // Original uses 1.1, which is more than 2x the mesh radius (0.5 after scaling)
+      // This ensures proper perspective and avoids clipping, especially when looking from above
+      const cameraDistance = 0.5; // Match original value
       renderCam.position.copy(viewDir.multiplyScalar(cameraDistance));
-      renderCam.lookAt(0, 0.5, 0); // Look at origin since mesh is centered
+      // Look at true mesh center (origin after recentering), otherwise the
+      // captured angle will be slightly tilted compared to the sampling
+      // direction used at runtime. (English comment)
+      renderCam.lookAt(0, 0, 0);
 
       // Update WebGL camera to match
       glRenderCam.position.copy(renderCam.position);
-      glRenderCam.lookAt(0, 0.5, 0); // Look at origin
+      glRenderCam.lookAt(0, 0, 0);
 
       // Render using the reusable WebGL renderer
       let imageData = null;
@@ -396,6 +577,17 @@ async function generateAtlas({
   atlasTexture.magFilter = THREE.LinearFilter;
   atlasTexture.wrapS = THREE.ClampToEdgeWrapping;
   atlasTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+  // Match color space from main renderer
+  if (gl && gl.outputColorSpace !== undefined) {
+    atlasTexture.colorSpace = gl.outputColorSpace;
+  } else if (gl && gl.outputEncoding !== undefined) {
+    // Fallback for older Three.js versions
+    atlasTexture.encoding = gl.outputEncoding;
+  } else {
+    // Default to sRGB
+    atlasTexture.colorSpace = THREE.SRGBColorSpace;
+  }
 
   // Debug: Log atlas info
   console.log("Atlas generated:", {

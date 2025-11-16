@@ -72,12 +72,13 @@ export default function OctahedralImpostor({
   const nodeMaterial = useMemo(() => {
     if (!atlas || !octahedralData) return null;
 
-    const material = new THREE.MeshStandardNodeMaterial();
+    const material = new THREE.MeshBasicNodeMaterial();
     material.transparent = true;
     material.alphaTest = alphaTest;
-    material.side = THREE.DoubleSide;
+    material.side = THREE.FrontSide;
     material.roughness = roughness;
     material.metalness = metalness;
+    material.wireframe = false;
 
     // Uniforms - FOLLOWING ORIGINAL EXAMPLE EXACTLY
     const gridSizeUniform = uniform(float(gridSize));
@@ -141,7 +142,7 @@ export default function OctahedralImpostor({
       .mul(faceWeightsUniform.x)
       .add(colorB.rgb.mul(faceWeightsUniform.y))
       .add(colorC.rgb.mul(faceWeightsUniform.z))
-      .mul(float(1.0)); // Multiply by 3.0 as in original
+      .mul(float(1.5)); // Multiply by 3.0 as in original
 
     const finalAlpha = colorA.a
       .mul(faceWeightsUniform.x)
@@ -150,16 +151,11 @@ export default function OctahedralImpostor({
 
     material.colorNode = finalColor;
     material.opacityNode = finalAlpha;
+    material.toneMapped = true;
 
     // Store uniforms for updating
     material.userData.faceIndicesUniform = faceIndicesUniform;
     material.userData.faceWeightsUniform = faceWeightsUniform;
-
-    // Environment map
-    if (scene.environment) {
-      material.envMap = scene.environment;
-      material.envMapIntensity = envMapIntensity;
-    }
 
     return material;
   }, [
@@ -200,9 +196,11 @@ export default function OctahedralImpostor({
       targetCenter.set(position[0], position[1], position[2]);
     }
 
+    // Calculate direction from object to camera (matching original raycast)
+    // Original: raycaster.ray.direction.subVectors(mesh.position, camera.position)
     const viewDir = tempDirection
-      .copy(camera.position)
-      .sub(targetCenter)
+      .copy(targetCenter)
+      .sub(camera.position)
       .normalize();
 
     if (lastDirectionRef.current) {

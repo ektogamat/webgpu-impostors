@@ -3,7 +3,10 @@ import { Canvas, extend } from "@react-three/fiber";
 import SceneLight from "./SceneLight";
 import { Suspense } from "react";
 import TreeOctahedralImpostorField from "./TreeOctahedralImpostorField";
-import { Loader, OrbitControls } from "@react-three/drei";
+import TreeOctahedralImpostor from "./TreeOctahedralImpostor";
+import TreeOctahedralImpostorCompute from "./TreeOctahedralImpostorCompute"; // New: WebGPU Compute-based
+import { Gltf, Loader, OrbitControls } from "@react-three/drei";
+import GridWrapper from "./GridWrapper";
 
 export default function App() {
   return (
@@ -25,9 +28,9 @@ export default function App() {
       >
         <Suspense fallback={null}>
           <SceneLight />
-          <OrbitControls />
+          <OrbitControls maxPolarAngle={Math.PI / 2} />
 
-          <TreeOctahedralImpostorField
+          {/* <TreeOctahedralImpostorField
             // modelPath="/tree.gltf"
             modelPath="/tree.glb"
             // modelPath="/car.gltf" // This we can see the rotation problems
@@ -46,7 +49,58 @@ export default function App() {
             metalness={0}
             alphaTest={0.6}
             envMapIntensity={0.2}
+          /> */}
+
+          {/* 🔥 NEW: WebGPU Compute-based Atlas Generation */}
+          {/* Uncomment to use GPU compute shaders (faster, more efficient) */}
+          {/* 
+          <TreeOctahedralImpostorCompute
+            modelPath="/car.glb"
+            position={[-1, -1, 0]}
+            scale={[2, 2, 2]}
+            gridSize={24}
+            atlasSize={8192}
+            octType={1} // 0 = HEMI, 1 = FULL
+            geometryArgs={[3.5, 3.5]}
+            roughness={1}
+            metalness={0}
+            alphaTest={0.5}
+            envMapIntensity={1}
+            // GPU Post-Processing Options
+            usePostProcessing={true}
+            brightness={1.05} // 5% brighter
+            contrast={1.0}    // No contrast change
           />
+          */}
+
+          {/* Original WebGL-based Atlas Generation */}
+          {/* <TreeOctahedralImpostor
+            modelPath="/car.glb"
+            position={[-3, -1, 0]}
+            scale={[2, 2, 2]}
+            gridSize={24}
+            atlasSize={8192}
+            octType={1} // 0 = HEMI, 1 = FULL
+            geometryArgs={[3.5, 3.5]}
+            roughness={1}
+            metalness={0}
+            alphaTest={0.5} // 0.5
+            envMapIntensity={1}
+          /> */}
+
+          <TreeOctahedralImpostorCompute
+            modelPath="/car.glb"
+            position={[-1, -1, 0]}
+            scale={[2, 2, 2]}
+            gridSize={32}
+            atlasSize={8192}
+            octType={1} // 0 = HEMI, 1 = FULL
+            geometryArgs={[3.5, 3.5]}
+            directionThresholdRadians={0.01872665}
+          />
+
+          <Gltf src="/car.glb" position={[1, -1.2, 0]} scale={[1, 1, 1]} />
+          <GridWrapper />
         </Suspense>
       </Canvas>
 
