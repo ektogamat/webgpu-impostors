@@ -25,6 +25,14 @@ export default function TreeOctahedralImpostorCompute({
   contrast = 1.0, // Post-processing contrast
   // Default: 5 degrees in radians to avoid excessive view switching
   directionThresholdRadians = 0.0872665,
+  // New parameters from Godot implementation
+  atlasCoverage = 1.0,
+  useDither = false,
+  depthScale = 1.0,
+  aabbMax = [1, 1, 1],
+  optimizeSize = false,
+  usePostDilatation = false,
+  dilationRadius = 1,
 }) {
   // Load GLTF model using drei
   const gltf = useGLTF(modelPath);
@@ -59,7 +67,10 @@ export default function TreeOctahedralImpostorCompute({
     usePostProcessing,
     brightness,
     contrast,
-    directionThresholdRadians,
+    optimizeSize,
+    atlasCoverage,
+    usePostDilatation,
+    dilationRadius,
   });
 
   // Show loading indicator while generating
@@ -96,6 +107,10 @@ export default function TreeOctahedralImpostorCompute({
       envMapIntensity={envMapIntensity}
       enabled={true}
       directionThresholdRadians={directionThresholdRadians}
+      atlasCoverage={atlasCoverage}
+      useDither={useDither}
+      depthScale={depthScale}
+      aabbMax={aabbMax}
     />
   );
 }

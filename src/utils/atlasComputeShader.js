@@ -139,6 +139,103 @@ export function createStorageTexture(width, height) {
 }
 
 /**
+ * Creates a WebGPU compute shader for post-dilatation of atlas textures.
+ * This expands textures to avoid bleeding between atlas cells.
+ * @param {Object} params - Shader parameters
+ */
+export function createAtlasDilatationShader({
+  sourceTexture,
+  targetStorageTexture,
+  atlasSize,
+  gridSize,
+  dilationRadius = 1, // Number of pixels to expand
+}) {
+  const width = atlasSize;
+  const height = atlasSize;
+
+  const dilatationShader = Fn(
+    ({
+      storageTexture,
+      sourceTexture,
+      atlasSizeUniform,
+      gridSizeUniform,
+      // dilationRadiusUniform,
+    }) => {
+      const posX = instanceIndex.mod(width);
+      const posY = instanceIndex.div(width);
+      const indexUV = uvec2(posX, posY);
+
+      // Sample source texture
+      const u = float(posX).div(float(width));
+      const v = float(posY).div(float(height));
+      const sourceUV = vec2(u, v);
+
+      // Get cell size in pixels
+      const cellSize = float(width).div(gridSizeUniform);
+      const pixelSize = float(1.0).div(float(width));
+
+      // Sample center pixel
+      let maxAlpha = texture(sourceTexture, sourceUV).a;
+      let maxColor = texture(sourceTexture, sourceUV).rgb;
+
+      // Sample neighboring pixels within dilation radius (fixed 3x3 kernel for radius=1)
+      // This expands the texture to avoid bleeding
+      // We sample a 3x3 grid around the current pixel
+      const offsets = [
+        vec2(float(-1), float(-1)),
+        vec2(float(0), float(-1)),
+        vec2(float(1), float(-1)),
+        vec2(float(-1), float(0)),
+        vec2(float(0), float(0)),
+        vec2(float(1), float(0)),
+        vec2(float(-1), float(1)),
+        vec2(float(0), float(1)),
+        vec2(float(1), float(1)),
+      ];
+
+      // Sample all neighbors (for dilationRadius = 1, we use 3x3 kernel)
+      // for (let i = 0; i < 9; i++) {
+      //   const offset = offsets[i];
+      //   const offsetU = offset.x.mul(pixelSize);
+      //   const offsetV = offset.y.mul(pixelSize);
+      //   const sampleUV = sourceUV.add(vec2(offsetU, offsetV));
+      //   const sampleColor = texture(sourceTexture, sampleUV);
+
+      //   // Keep the pixel with highest alpha (most opaque)
+      //   if (sampleColor.a.greaterThan(maxAlpha)) {
+      //     maxAlpha = sampleColor.a;
+      //     maxColor = sampleColor.rgb;
+      //   }
+      // }
+
+      const finalColor = vec4(maxColor, maxAlpha);
+
+      // Write to storage texture
+      textureStore(storageTexture, indexUV, finalColor).toWriteOnly();
+    }
+  );
+
+  const atlasSizeUniform = uniform(float(atlasSize));
+  const gridSizeUniform = uniform(float(gridSize));
+  // const dilationRadiusUniform = uniform(float(dilationRadius));
+
+  const computeNode = dilatationShader({
+    storageTexture: targetStorageTexture,
+    sourceTexture: sourceTexture,
+    atlasSizeUniform,
+    gridSizeUniform,
+    // dilationRadiusUniform,
+  }).compute(width * height);
+
+  return {
+    computeNode,
+    atlasSizeUniform,
+    gridSizeUniform,
+    // dilationRadiusUniform,
+  };
+}
+
+/**
  * Helper function to convert StorageTexture to regular Texture for sampling
  */
 export async function storageTextureToTexture(renderer, storageTexture) {

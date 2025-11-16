@@ -21,6 +21,11 @@ export default function TreeOctahedralImpostor({
   alphaTest = 0.5,
   envMapIntensity = 1,
   samplingCacheOverride = null,
+  // New parameters from Godot implementation
+  atlasCoverage = 1.0,
+  useDither = false,
+  depthScale = 1.0,
+  aabbMax = [1, 1, 1],
   ...props
 }) {
   // Load the GLTF model
@@ -78,6 +83,10 @@ export default function TreeOctahedralImpostor({
       alphaTest={alphaTest}
       envMapIntensity={envMapIntensity}
       samplingCacheOverride={samplingCacheOverride}
+      atlasCoverage={atlasCoverage}
+      useDither={useDither}
+      depthScale={depthScale}
+      aabbMax={aabbMax}
       {...props}
     />
   );

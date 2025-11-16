@@ -3,46 +3,87 @@ import { buildOctahedralMesh } from "./octahedralHelper";
 const samplingCache = new Map();
 
 function encodeDirectionToOctUV(direction, octType) {
-  // Direction passed in is from camera to object, but the atlas was baked
-  // using vectors from the object origin *towards the camera* (pntOct).
-  // To get a consistent mapping we must invert the direction here so that
-  // it lives in the same space as the bake directions. (English comment)
+  // Direction is from object to camera (normalized)
+  // viewDir = object - camera, so if camera is above, viewDir.y < 0
+  // But atlas was baked using pntOct which points from object to camera
+  // pntOct has y >= 0 in HEMI mode (upper hemisphere only)
+  // So we need to handle the mapping correctly:
+  // - When camera is above (viewDir.y < 0), we want to use top view (y = 1 in pntOct space)
+  // - When camera is below (viewDir.y > 0), we project to horizontal (y = 0 in pntOct space)
+
   const x = direction.x;
   const y = direction.y;
   const z = direction.z;
 
-  // Common normalization for both modes
-  const absX = Math.abs(x);
-  const absY = Math.abs(y);
-  const absZ = Math.abs(z);
-  const invSum = 1 / (absX + absY + absZ + 1e-9);
-
-  let nx = x * invSum;
-  let ny = y * invSum;
-  let nz = z * invSum;
-
   if (octType === 0) {
-    // HEMI mode: only use upper hemisphere (y >= 0)
-    // When looking from above (y < 0), map to horizontal view (y = 0)
-    // while preserving x and z orientation to avoid rotation inversion
+    // HEMI mode: only use upper hemisphere (y >= 0 in pntOct space)
+    // This doubles resolution for side views (most common for trees/foliage)
+    // In HEMI mode, pntOct always has y >= 0 (upper hemisphere)
+    // So when viewDir.y < 0 (camera above), we need to map to top view
+    // When viewDir.y > 0 (camera below), we project to horizontal
+
+    // For HEMI, we need to map viewDir to pntOct space where y >= 0
+    // If viewDir.y < 0 (camera above), flip to use top view: use -viewDir
+    // If viewDir.y > 0 (camera below), project to horizontal: set y = 0
+    let mappedX = x;
+    let mappedY = y;
+    let mappedZ = z;
+
+    if (y < 0) {
+      // Camera is above: flip to use top view (this is the upper hemisphere)
+      // Keep X and Z orientation, only flip Y to positive
+      // This preserves the horizontal orientation while using top view
+      mappedX = x; // Keep X as-is to preserve left/right orientation
+      mappedY = -y; // Now positive (top view)
+      mappedZ = z; // Keep Z as-is to preserve forward/back orientation
+    } else if (y > 0) {
+      // Camera is below: project to horizontal plane
+      mappedY = 0;
+      const len = Math.sqrt(x * x + z * z);
+      if (len > 1e-9) {
+        mappedX = x / len;
+        mappedZ = z / len;
+      } else {
+        mappedX = 0;
+        mappedZ = 1;
+      }
+    }
+    // If y == 0, use as-is (horizontal view)
+
+    // Normalize using L1 norm (sum of absolutes) to match octHemi encoding
+    const absX = Math.abs(mappedX);
+    const absY = Math.abs(mappedY);
+    const absZ = Math.abs(mappedZ);
+    const sum = absX + absY + absZ;
+
+    if (sum < 1e-9) {
+      return { u: 0.5, v: 0.5 };
+    }
+
+    let nx = mappedX / sum;
+    let ny = mappedY / sum;
+    let nz = mappedZ / sum;
+
+    // Ensure y >= 0 (should already be true after mapping, but double-check)
     if (ny < 0) {
-      // Set y to 0 (horizontal view) and renormalize x and z
-      // This preserves the horizontal orientation without inverting rotation
       ny = 0;
       const len = Math.sqrt(nx * nx + nz * nz);
       if (len > 1e-9) {
         nx /= len;
         nz /= len;
-      } else {
-        // Fallback if x and z are both near zero
-        nx = 0;
-        nz = 1;
+      }
+      const absX2 = Math.abs(nx);
+      const absZ2 = Math.abs(nz);
+      const sum2 = absX2 + absZ2;
+      if (sum2 > 1e-9) {
+        nx = nx / sum2;
+        nz = nz / sum2;
       }
     }
 
-    // Convert to UV using the inverse of octHemi
-    // From octHemi: x = ox - oy, z = -1 + ox + oy
-    // Solving: ox = (x + z + 1) / 2, oy = (z + 1 - x) / 2
+    // Convert hemisphere direction to UV using inverse of octHemi
+    // octHemi encoding: x = ox - oy, z = -1 + ox + oy, y = 1 - |x| - |z|
+    // Solving for ox, oy: ox = (x + z + 1) / 2, oy = (z + 1 - x) / 2
     const ox = (nx + nz + 1) / 2;
     const oy = (nz + 1 - nx) / 2;
 
@@ -51,8 +92,22 @@ function encodeDirectionToOctUV(direction, octType) {
       v: Math.max(0, Math.min(1, oy)),
     };
   } else {
-    // FULL mode: standard octahedral encoding
-    // Handle lower hemisphere
+    // FULL mode: standard octahedral encoding (both hemispheres)
+    // Use L1 normalization to match octFull encoding
+    const absX = Math.abs(x);
+    const absY = Math.abs(y);
+    const absZ = Math.abs(z);
+    const sum = absX + absY + absZ;
+
+    if (sum < 1e-9) {
+      return { u: 0.5, v: 0.5 };
+    }
+
+    let nx = x / sum;
+    let ny = y / sum;
+    let nz = z / sum;
+
+    // Handle lower hemisphere (y < 0)
     if (ny < 0) {
       const signX = nx >= 0 ? 1 : -1;
       const signZ = nz >= 0 ? 1 : -1;
@@ -62,6 +117,7 @@ function encodeDirectionToOctUV(direction, octType) {
       nz = newZ;
     }
 
+    // Convert to UV: map [-1, 1] to [0, 1]
     return {
       u: nx * 0.5 + 0.5,
       v: nz * 0.5 + 0.5,
@@ -209,9 +265,40 @@ export function sampleOctahedralDirection({
   indicesTarget,
   weightsTarget,
 }) {
-  if (!cache) return false;
+  if (!cache) {
+    console.warn("sampleOctahedralDirection: No cache provided");
+    return false;
+  }
 
-  const uv = encodeDirectionToOctUV(direction, cache.octType);
+  if (!direction || !direction.isVector3) {
+    console.warn("sampleOctahedralDirection: Invalid direction");
+    return false;
+  }
+
+  // Ensure direction is normalized
+  const normalizedDir = direction.clone().normalize();
+  if (normalizedDir.length() < 0.1) {
+    console.warn(
+      "sampleOctahedralDirection: Direction too small after normalization"
+    );
+    return false;
+  }
+
+  const uv = encodeDirectionToOctUV(normalizedDir, cache.octType);
+
+  // Validate UV coordinates
+  if (
+    isNaN(uv.u) ||
+    isNaN(uv.v) ||
+    uv.u < 0 ||
+    uv.u > 1 ||
+    uv.v < 0 ||
+    uv.v > 1
+  ) {
+    console.warn("sampleOctahedralDirection: Invalid UV coordinates", uv);
+    return false;
+  }
+
   const gridSize = cache.gridSize;
 
   const scaledU = uv.u * gridSize;
@@ -223,8 +310,15 @@ export function sampleOctahedralDirection({
   const localU = Math.min(Math.max(scaledU - col, 0), 0.999999);
   const localV = Math.min(Math.max(scaledV - row, 0), 0.999999);
 
-  const cell = cache.cells[row * gridSize + col];
-  if (!cell) return false;
+  const cellIndex = row * gridSize + col;
+  const cell = cache.cells[cellIndex];
+
+  if (!cell) {
+    console.warn(
+      `sampleOctahedralDirection: No cell found at [${row}, ${col}] (index ${cellIndex})`
+    );
+    return false;
+  }
 
   const triangle =
     cell.isBackslash && localU > localV
@@ -233,13 +327,22 @@ export function sampleOctahedralDirection({
       ? cell.triangles[1]
       : cell.triangles[0];
 
+  if (!triangle || !triangle.indices || triangle.indices.length !== 3) {
+    console.warn("sampleOctahedralDirection: Invalid triangle");
+    return false;
+  }
+
   computeBarycentric2D(localU, localV, triangle.uv, weightsTarget);
 
-  indicesTarget.set(
-    triangle.indices[0],
-    triangle.indices[1],
-    triangle.indices[2]
-  );
+  // Validate indices before setting
+  const maxIndex = (gridSize + 1) * (gridSize + 1) - 1;
+  const validIndices = [
+    Math.max(0, Math.min(triangle.indices[0], maxIndex)),
+    Math.max(0, Math.min(triangle.indices[1], maxIndex)),
+    Math.max(0, Math.min(triangle.indices[2], maxIndex)),
+  ];
+
+  indicesTarget.set(validIndices[0], validIndices[1], validIndices[2]);
 
   return true;
 }

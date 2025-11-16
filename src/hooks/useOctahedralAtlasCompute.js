@@ -6,6 +6,7 @@ import { useEnvironment, useGLTF } from "@react-three/drei";
 import {
   createAtlasCopyComputeShader,
   createAtlasPostProcessShader,
+  createAtlasDilatationShader,
   createStorageTexture,
 } from "../utils/atlasComputeShader";
 import { texture } from "three/tsl";
@@ -49,6 +50,10 @@ export function useOctahedralAtlasCompute({
   usePostProcessing = true, // Enable GPU post-processing
   brightness = 1.0,
   contrast = 1.0,
+  optimizeSize = false, // Reduce resolution of non-critical textures to save VRAM
+  atlasCoverage = 1.0, // How much of each atlas tile the geometry takes up (0-1)
+  usePostDilatation = false, // Expand textures to avoid bleeding between atlas cells
+  dilationRadius = 1, // Number of pixels to expand
 }) {
   const { gl, scene, camera } = useThree();
   const [atlas, setAtlas] = useState(null);
@@ -76,6 +81,15 @@ export function useOctahedralAtlasCompute({
 
   octahedralDataRef.current = octahedralData;
 
+  // Calculate effective atlas size (may be reduced for optimization)
+  const effectiveAtlasSize = useMemo(() => {
+    if (optimizeSize) {
+      // Reduce atlas size by 50% to save VRAM (can be adjusted)
+      return Math.max(512, Math.floor(atlasSize * 0.5));
+    }
+    return atlasSize;
+  }, [atlasSize, optimizeSize]);
+
   // Generate atlas using WebGPU compute shaders
   useEffect(() => {
     // Wait for gltfScene to load if using modelPath
@@ -91,7 +105,12 @@ export function useOctahedralAtlasCompute({
       return;
     }
 
-    const cacheKey = buildAtlasCacheKey(mesh, gridSize, atlasSize, octType);
+    const cacheKey = buildAtlasCacheKey(
+      mesh,
+      gridSize,
+      effectiveAtlasSize,
+      octType
+    );
 
     if (cacheKey && atlasCache.has(cacheKey)) {
       const cachedAtlas = atlasCache.get(cacheKey);
@@ -128,12 +147,16 @@ export function useOctahedralAtlasCompute({
         mesh,
         octahedralData,
         gridSize,
-        atlasSize,
+        atlasSize: effectiveAtlasSize,
+        atlasCoverage,
         gl,
         camera,
         usePostProcessing,
         brightness,
         contrast,
+        usePostDilatation,
+        dilationRadius,
+        gridSize,
       }).then(
         (texture) => {
           const atlasPayload = {
@@ -180,6 +203,7 @@ export function useOctahedralAtlasCompute({
     modelPath,
     octahedralData,
     gridSize,
+    effectiveAtlasSize,
     atlasSize,
     enabled,
     gl,
@@ -190,6 +214,10 @@ export function useOctahedralAtlasCompute({
     usePostProcessing,
     brightness,
     contrast,
+    optimizeSize,
+    atlasCoverage,
+    usePostDilatation,
+    dilationRadius,
   ]);
 
   return {
@@ -212,11 +240,14 @@ async function generateAtlasWithCompute({
   octahedralData,
   gridSize,
   atlasSize,
+  atlasCoverage = 1.0,
   gl,
   camera,
   usePostProcessing,
   brightness,
   contrast,
+  usePostDilatation = false,
+  dilationRadius = 1,
 }) {
   console.log("🚀 Starting WebGPU Compute-based atlas generation...");
 
@@ -341,7 +372,10 @@ async function generateAtlasWithCompute({
   gl.getClearColor(originalClearColor);
 
   const numCells = gridSize;
-  const cellSize = Math.floor((atlasSize / numCells) * 1.0);
+  // Apply atlas coverage to cell size calculation
+  // Coverage < 1.0 means we use less of each cell, so we can render at higher resolution
+  const effectiveCellSize = Math.floor((atlasSize / numCells) * atlasCoverage);
+  const cellSize = Math.max(1, effectiveCellSize);
 
   const { pntOct } = octahedralData;
 
@@ -426,13 +460,14 @@ async function generateAtlasWithCompute({
   // 🚀 OPTIONAL: POST-PROCESS ATLAS USING COMPUTE SHADER
   let finalTexture = storageTexture;
 
+  // Apply post-processing (brightness/contrast)
   if (usePostProcessing && (brightness !== 1.0 || contrast !== 1.0)) {
     console.log("🚀 Applying post-processing with compute shader...");
 
     const postProcessedStorage = createStorageTexture(atlasSize, atlasSize);
 
     const { computeNode } = createAtlasPostProcessShader({
-      sourceTexture: storageTexture,
+      sourceTexture: finalTexture,
       targetStorageTexture: postProcessedStorage,
       atlasSize,
       brightness,
@@ -443,6 +478,26 @@ async function generateAtlasWithCompute({
     console.log("✓ Post-processing complete");
 
     finalTexture = postProcessedStorage;
+  }
+
+  // Apply post-dilatation (expand textures to avoid bleeding)
+  if (usePostDilatation) {
+    console.log("🚀 Applying post-dilatation with compute shader...");
+
+    const dilatedStorage = createStorageTexture(atlasSize, atlasSize);
+
+    const { computeNode } = createAtlasDilatationShader({
+      sourceTexture: finalTexture,
+      targetStorageTexture: dilatedStorage,
+      atlasSize,
+      gridSize,
+      dilationRadius,
+    });
+
+    await gl.computeAsync(computeNode);
+    console.log("✓ Post-dilatation complete");
+
+    finalTexture = dilatedStorage;
   }
 
   // Cleanup temporary resources

@@ -39,6 +39,8 @@ export function useOctahedralAtlas({
   atlasSize = 2048,
   octType = OCT_TYPE.HEMI,
   enabled = true,
+  optimizeSize = false, // Reduce resolution of non-critical textures to save VRAM
+  atlasCoverage = 1.0, // How much of each atlas tile the geometry takes up (0-1)
 }) {
   const { gl, scene, camera } = useThree();
   const [atlas, setAtlas] = useState(null);
@@ -68,6 +70,15 @@ export function useOctahedralAtlas({
 
   octahedralDataRef.current = octahedralData;
 
+  // Calculate effective atlas size (may be reduced for optimization)
+  const effectiveAtlasSize = useMemo(() => {
+    if (optimizeSize) {
+      // Reduce atlas size by 50% to save VRAM (can be adjusted)
+      return Math.max(512, Math.floor(atlasSize * 0.5));
+    }
+    return atlasSize;
+  }, [atlasSize, optimizeSize]);
+
   // Generate atlas
   useEffect(() => {
     // Wait for gltfScene to load if using modelPath
@@ -83,7 +94,12 @@ export function useOctahedralAtlas({
       return;
     }
 
-    const cacheKey = buildAtlasCacheKey(mesh, gridSize, atlasSize, octType);
+    const cacheKey = buildAtlasCacheKey(
+      mesh,
+      gridSize,
+      effectiveAtlasSize,
+      octType
+    );
 
     if (cacheKey && atlasCache.has(cacheKey)) {
       const cachedAtlas = atlasCache.get(cacheKey);
@@ -120,7 +136,8 @@ export function useOctahedralAtlas({
         mesh, // Keep mesh for cache key
         octahedralData,
         gridSize,
-        atlasSize,
+        atlasSize: effectiveAtlasSize,
+        atlasCoverage,
         gl,
         camera,
       }).then(
@@ -169,6 +186,7 @@ export function useOctahedralAtlas({
     modelPath,
     octahedralData,
     gridSize,
+    effectiveAtlasSize,
     atlasSize,
     enabled,
     gl,
@@ -176,6 +194,8 @@ export function useOctahedralAtlas({
     camera,
     octType,
     environment,
+    optimizeSize,
+    atlasCoverage,
   ]);
 
   return {
@@ -197,6 +217,7 @@ async function generateAtlas({
   octahedralData,
   gridSize,
   atlasSize,
+  atlasCoverage = 1.0,
   gl,
   camera,
 }) {
@@ -357,7 +378,10 @@ async function generateAtlas({
   gl.getClearColor(originalClearColor);
 
   const numCells = gridSize;
-  const cellSize = Math.floor((atlasSize / numCells) * 1.0);
+  // Apply atlas coverage to cell size calculation
+  // Coverage < 1.0 means we use less of each cell, so we can render at higher resolution
+  const effectiveCellSize = Math.floor((atlasSize / numCells) * atlasCoverage);
+  const cellSize = Math.max(1, effectiveCellSize);
 
   const { pntOct } = octahedralData;
 

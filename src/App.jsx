@@ -21,7 +21,7 @@ export default function App() {
         }}
         camera={{
           position: [7, 8, 15],
-          fov: 45,
+          fov: 30,
           near: 0.5,
           far: 1000,
         }}
@@ -90,13 +90,17 @@ export default function App() {
 
           <TreeOctahedralImpostorCompute
             modelPath="/car.glb"
-            position={[-1, -1, 0]}
-            scale={[2, 2, 2]}
-            gridSize={32}
-            atlasSize={8192}
-            octType={1} // 0 = HEMI, 1 = FULL
-            geometryArgs={[3.5, 3.5]}
+            position={[-6, -2, 0]}
+            // scale={[3, 3, 3]}
+            gridSize={21}
+            atlasSize={4096}
+            octType={0} // 0 = HEMI, 1 = FULL
+            geometryArgs={[6, 6]}
             directionThresholdRadians={0.01872665}
+            optimizeSize={true}
+            usePostDilatation={true}
+            dilationRadius={0}
+            envMapIntensity={1}
           />
 
           <Gltf src="/car.glb" position={[1, -1.2, 0]} scale={[1, 1, 1]} />
