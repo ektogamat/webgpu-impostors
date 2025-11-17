@@ -354,7 +354,7 @@ async function generateAtlas({
     }
   });
 
-  const radius = boundingSphere.radius * 1.5;
+  const radius = boundingSphere.radius * 2;
   const scaleFactor = 0.5 / radius; // scale to unit sphere
   renderMesh.scale.setScalar(scaleFactor);
 
@@ -530,7 +530,7 @@ async function generateAtlas({
       // Position camera - match original distance
       // Original uses 1.1, which is more than 2x the mesh radius (0.5 after scaling)
       // This ensures proper perspective and avoids clipping, especially when looking from above
-      const cameraDistance = 0.5; // Match original value
+      const cameraDistance = 1.1; // Match original value
       renderCam.position.copy(viewDir.multiplyScalar(cameraDistance));
       // Look at true mesh center (origin after recentering), otherwise the
       // captured angle will be slightly tilted compared to the sampling

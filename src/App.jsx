@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import TreeOctahedralImpostorField from "./TreeOctahedralImpostorField";
 import TreeOctahedralImpostor from "./TreeOctahedralImpostor";
 import TreeOctahedralImpostorCompute from "./TreeOctahedralImpostorCompute"; // New: WebGPU Compute-based
+import TreeOctahedralImpostorFieldCompute from "./TreeOctahedralImpostorFieldCompute"; // New: WebGPU Compute-based field with atlas caching
 import { Gltf, Loader, OrbitControls } from "@react-three/drei";
 import GridWrapper from "./GridWrapper";
 
@@ -51,6 +52,42 @@ export default function App() {
             envMapIntensity={0.2}
           /> */}
 
+          {/* 🔥 NEW: WebGPU Compute-based Field with Atlas Caching */}
+          {/* Uncomment to render hundreds of instances sharing a single atlas */}
+          {/* Atlas is generated once and automatically cached for all instances */}
+
+          <TreeOctahedralImpostorFieldCompute
+            modelPath="/car.glb"
+            position={[0, -2, 0]}
+            count={500} // Hundreds of instances sharing the same atlas
+            areaSize={[250, 250]}
+            minHeight={0}
+            maxHeight={0}
+            minScale={0.8}
+            maxScale={1}
+            baseScale={[1.8, 1.8, 1.8]}
+            avoidRadius={6}
+            seed={2024}
+            gridSize={16}
+            atlasSize={4096}
+            octType={0} // 0 = HEMI, 1 = FULL
+            geometryArgs={[4, 4]}
+            roughness={1}
+            metalness={0}
+            alphaTest={0.5}
+            envMapIntensity={1}
+            // WebGPU Compute specific options
+            usePostProcessing={true}
+            brightness={1.0}
+            contrast={1.0}
+            optimizeSize={true}
+            atlasCoverage={1.0}
+            usePostDilatation={false}
+            dilationRadius={0}
+            showWireframe={false}
+            directionThresholdRadians={0.0872665}
+          />
+
           {/* 🔥 NEW: WebGPU Compute-based Atlas Generation */}
           {/* Uncomment to use GPU compute shaders (faster, more efficient) */}
           {/* 
@@ -88,8 +125,8 @@ export default function App() {
             envMapIntensity={1}
           /> */}
 
-          <TreeOctahedralImpostorCompute
-            modelPath="/car.glb"
+          {/* <TreeOctahedralImpostorCompute
+            modelPath="/tree.glb"
             position={[-6, -2, 0]}
             // scale={[3, 3, 3]}
             gridSize={21}
@@ -101,7 +138,7 @@ export default function App() {
             usePostDilatation={true}
             dilationRadius={0}
             envMapIntensity={1}
-          />
+          /> */}
 
           <Gltf src="/car.glb" position={[1, -1.2, 0]} scale={[1, 1, 1]} />
           <GridWrapper />

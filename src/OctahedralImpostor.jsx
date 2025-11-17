@@ -33,6 +33,8 @@ export default function OctahedralImpostor({
   verticalRotationThreshold = 0.5, // Threshold in radians (0.4 = ~72 degrees) for vertical viewing
   smoothRotation = true, // Smooth rotation transitions (uses slerp)
   rotationSmoothness = 0.5, // Smoothness factor (0-1, lower = smoother)
+  frustumCulled = false,
+  showWireframe = false,
 }) {
   const groupRef = useRef(null);
   const billboardRef = useRef(null);
@@ -60,6 +62,7 @@ export default function OctahedralImpostor({
     octType,
     enabled: enabled && !!mesh,
     atlasCoverage,
+    frustumCulled,
   });
 
   const samplingCache = useMemo(() => {
@@ -106,7 +109,7 @@ export default function OctahedralImpostor({
     material.side = THREE.FrontSide;
     material.roughness = roughness;
     material.metalness = metalness;
-    material.wireframe = false;
+    material.wireframe = showWireframe;
 
     // Uniforms - FOLLOWING ORIGINAL EXAMPLE EXACTLY
     const gridSizeUniform = uniform(float(gridSize));
@@ -224,7 +227,7 @@ export default function OctahedralImpostor({
     const maxCellDist = cellDistA.max(cellDistB).max(cellDistC);
 
     // If cells are too far apart, use dominant weight to reduce artifacts
-    const cellDistThreshold = float(2.0); // Allow up to 2 cells distance
+    const cellDistThreshold = float(0.1); // Allow up to 2 cells distance
     const useConservativeBlend = maxCellDist.greaterThan(cellDistThreshold);
 
     // Normalize weights to ensure they sum to 1
@@ -307,7 +310,7 @@ export default function OctahedralImpostor({
     // Instead, we ensure valid sampling and indices are always set (handled in useFrame)
 
     material.colorNode = finalColor;
-    material.opacityNode = processedAlpha;
+    material.opacityNode = showWireframe ? 1.0 : processedAlpha;
     material.alphaTest = useDither ? 0.0 : alphaTest; // Disable alphaTest when using dither
     material.toneMapped = true;
 
@@ -524,7 +527,7 @@ export default function OctahedralImpostor({
   return (
     <group ref={groupRef} position={position} scale={scale}>
       <group ref={billboardRef} position={aabbOffset}>
-        <mesh>
+        <mesh frustumCulled={frustumCulled}>
           <planeGeometry args={geometryArgs} />
           <primitive object={nodeMaterial} attach="material" />
         </mesh>

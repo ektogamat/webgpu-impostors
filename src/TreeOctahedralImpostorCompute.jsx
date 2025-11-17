@@ -33,6 +33,9 @@ export default function TreeOctahedralImpostorCompute({
   optimizeSize = false,
   usePostDilatation = false,
   dilationRadius = 1,
+  samplingCacheOverride = null, // Shared sampling cache for multiple instances
+  frustumCulled = false,
+  showWireframe = false,
 }) {
   // Load GLTF model using drei
   const gltf = useGLTF(modelPath);
@@ -111,9 +114,12 @@ export default function TreeOctahedralImpostorCompute({
       useDither={useDither}
       depthScale={depthScale}
       aabbMax={aabbMax}
+      samplingCacheOverride={samplingCacheOverride}
+      frustumCulled={frustumCulled}
+      showWireframe={showWireframe}
     />
   );
 }
 
-// Preload GLTF models
-useGLTF.preload = (path) => useGLTF.preload(path);
+// Preload GLTF models (if needed, call useGLTF.preload(path) directly)
+// Note: useGLTF.preload is already available from @react-three/drei
