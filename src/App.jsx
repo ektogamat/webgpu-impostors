@@ -17,11 +17,11 @@ export default function App() {
   const { showInpostorWireframe, showOriginalModel } = useControls({
     showInpostorWireframe: {
       value: false,
-      label: "Show Inpostor Wireframe",
+      label: "Wireframe",
     },
     showOriginalModel: {
       value: true,
-      label: "Show Original Model",
+      label: "Original",
     },
   });
 
@@ -46,7 +46,7 @@ export default function App() {
           return renderer;
         }}
         camera={{
-          position: [7, 8, 15],
+          position: [0, 15, 45],
           fov: 30,
           near: 0.1,
           far: 3000,
@@ -58,7 +58,7 @@ export default function App() {
             maxDistance={150}
             minDistance={10}
             enableDamping={false}
-            maxPolarAngle={Math.PI / 2}
+            maxPolarAngle={Math.PI / 2 - 0.2}
           />
           <Perf position="top-left" showInfo={true} />
 
@@ -89,19 +89,19 @@ export default function App() {
 
           {/* OPTIMIZED: InstancedMesh for 10,000+ instances */}
           <TreeOctahedralImpostorInstanced
-            modelPath="/tree2.glb"
+            modelPath="/tree.glb"
             position={[0, 0, 0]}
-            count={5000} // 🎯 META: 10,000 instances!
-            areaSize={[300, 300]} // Larger area for 10k instances
+            count={5000}
+            areaSize={[300, 300]}
             minHeight={0}
             maxHeight={0}
-            minScale={0.5}
-            maxScale={1.5}
+            minScale={0.9}
+            maxScale={1.8}
             baseScale={[1, 1, 1]}
             avoidRadius={8}
             seed={22}
-            gridSize={24}
-            atlasSize={4096}
+            gridSize={64}
+            atlasSize={8192}
             octType={0}
             geometryArgs={[4, 4]}
             showWireframe={showInpostorWireframe}
@@ -200,7 +200,7 @@ export default function App() {
           /> */}
 
           {showOriginalModel && (
-            <Gltf src="/tree2.glb" position={[0, -1.2, 0]} scale={[1, 1, 1]} />
+            <Gltf src="/tree.glb" position={[0, -0.9, 0]} scale={[1, 1, 1]} />
           )}
           <GridWrapper />
         </Suspense>

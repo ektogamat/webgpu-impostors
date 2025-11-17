@@ -4,8 +4,8 @@ import { Environment } from "@react-three/drei";
 export default function SceneLight() {
   return (
     <>
-      <fog attach="fog" args={["#dddddd", 100, 500]} />
-      <color attach="background" args={["#dddddd"]} />
+      <fog attach="fog" args={["#b0daef", 80, 300]} />
+      <color attach="background" args={["#b0daef"]} />
       <directionalLight
         castShadow
         intensity={3}
