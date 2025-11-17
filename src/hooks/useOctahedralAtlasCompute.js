@@ -372,30 +372,23 @@ async function generateAtlasWithCompute({
   gl.getClearColor(originalClearColor);
 
   const numCells = gridSize;
-  // Apply atlas coverage to cell size calculation
-  // Coverage < 1.0 means we use less of each cell, so we can render at higher resolution
-  const effectiveCellSize = Math.floor((atlasSize / numCells) * atlasCoverage);
-  const cellSize = Math.max(1, effectiveCellSize);
+  const cellSize = Math.floor(atlasSize / numCells);
 
   const { pntOct } = octahedralData;
 
-  // 🚀 CREATE STORAGE TEXTURE FOR ATLAS (WebGPU Compute)
-  console.log("🚀 Creating StorageTexture for atlas...");
-  const storageTexture = createStorageTexture(atlasSize, atlasSize);
-
-  // Create temporary render target for each cell
-  // In WebGPU, we use THREE.RenderTarget (not WebGPURenderTarget)
-  const cellRenderTarget = new THREE.RenderTarget(cellSize, cellSize, {
+  // Create FINAL render target for the complete atlas
+  // Render cells directly to this (no compute shaders)
+  const atlasRenderTarget = new THREE.RenderTarget(atlasSize, atlasSize, {
     format: THREE.RGBAFormat,
-    type: THREE.FloatType,
+    type: THREE.UnsignedByteType,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
-    generateMipmaps: true,
+    generateMipmaps: false,
   });
 
-  console.log(`✓ Created ${cellSize}x${cellSize} render target for cells`);
+  console.log(`✓ Created ${atlasSize}x${atlasSize} atlas render target`);
 
-  // Render each cell and copy to StorageTexture using compute shader
+  // Render each cell directly to the atlas
   let renderedCells = 0;
   const startTime = performance.now();
 
@@ -415,30 +408,21 @@ async function generateAtlasWithCompute({
       renderCam.position.copy(viewDir.multiplyScalar(cameraDistance));
       renderCam.lookAt(0, 0, 0);
 
-      // Render to temporary target
-      gl.setRenderTarget(cellRenderTarget);
-      gl.setClearColor(0x000000, 0);
-      gl.clear();
-      gl.render(renderScene, renderCam);
-
-      // 🚀 USE COMPUTE SHADER TO COPY CELL TO STORAGE TEXTURE
+      // Set viewport for this cell
       const pixelX = Math.floor((colIdx / numCells) * atlasSize);
       const pixelY = Math.floor((rowIdx / numCells) * atlasSize);
-
-      // Create compute shader for this cell
-      const cellTexture = cellRenderTarget.texture;
-      const { computeNode, cellOffsetXUniform, cellOffsetYUniform } =
-        createAtlasCopyComputeShader({
-          sourceTexture: cellTexture,
-          targetStorageTexture: storageTexture,
-          cellSize,
-          targetX: pixelX,
-          targetY: pixelY,
-          atlasSize,
-        });
-
-      // Execute compute shader
-      await gl.computeAsync(computeNode);
+      
+      gl.setRenderTarget(atlasRenderTarget);
+      gl.setViewport(pixelX, pixelY, cellSize, cellSize);
+      gl.setScissor(pixelX, pixelY, cellSize, cellSize);
+      gl.setScissorTest(true);
+      
+      // Clear only this cell
+      gl.setClearColor(0x000000, 0);
+      gl.clear();
+      
+      // Render to this cell
+      gl.render(renderScene, renderCam);
 
       renderedCells++;
 
@@ -454,58 +438,15 @@ async function generateAtlasWithCompute({
     }
   }
 
+  // Reset viewport and scissor
+  gl.setScissorTest(false);
+  gl.setViewport(0, 0, gl.domElement.width, gl.domElement.height);
+
   const renderTime = ((performance.now() - startTime) / 1000).toFixed(2);
   console.log(`✓ Rendered ${renderedCells} cells in ${renderTime}s`);
 
-  // 🚀 OPTIONAL: POST-PROCESS ATLAS USING COMPUTE SHADER
-  let finalTexture = storageTexture;
-
-  // Apply post-processing (brightness/contrast)
-  if (usePostProcessing && (brightness !== 1.0 || contrast !== 1.0)) {
-    console.log("🚀 Applying post-processing with compute shader...");
-
-    const postProcessedStorage = createStorageTexture(atlasSize, atlasSize);
-
-    const { computeNode } = createAtlasPostProcessShader({
-      sourceTexture: finalTexture,
-      targetStorageTexture: postProcessedStorage,
-      atlasSize,
-      brightness,
-      contrast,
-    });
-
-    await gl.computeAsync(computeNode);
-    console.log("✓ Post-processing complete");
-
-    finalTexture = postProcessedStorage;
-  }
-
-  // Apply post-dilatation (expand textures to avoid bleeding)
-  if (usePostDilatation) {
-    console.log("🚀 Applying post-dilatation with compute shader...");
-
-    const dilatedStorage = createStorageTexture(atlasSize, atlasSize);
-
-    const { computeNode } = createAtlasDilatationShader({
-      sourceTexture: finalTexture,
-      targetStorageTexture: dilatedStorage,
-      atlasSize,
-      gridSize,
-      dilationRadius,
-    });
-
-    await gl.computeAsync(computeNode);
-    console.log("✓ Post-dilatation complete");
-
-    finalTexture = dilatedStorage;
-  }
-
-  // Cleanup temporary resources
-  cellRenderTarget.dispose();
-
-  // Convert StorageTexture to regular texture for material use
-  // In WebGPU, StorageTexture can be used directly with texture() in TSL
-  const atlasTexture = finalTexture;
+  // Use the atlas texture directly
+  const atlasTexture = atlasRenderTarget.texture;
   atlasTexture.needsUpdate = true;
   atlasTexture.flipY = false;
   atlasTexture.minFilter = THREE.LinearFilter;
@@ -513,6 +454,7 @@ async function generateAtlasWithCompute({
   atlasTexture.wrapS = THREE.ClampToEdgeWrapping;
   atlasTexture.wrapT = THREE.ClampToEdgeWrapping;
 
+  // Set proper color space for rendering
   if (gl && gl.outputColorSpace !== undefined) {
     atlasTexture.colorSpace = gl.outputColorSpace;
   } else {
@@ -521,6 +463,15 @@ async function generateAtlasWithCompute({
 
   console.log("✅ Atlas generation complete!");
   console.log(`📊 Stats: ${renderedCells} cells, ${renderTime}s total`);
+  console.log("🖼️ Atlas texture:", atlasTexture);
+  console.log("📐 Atlas size:", atlasTexture.image?.width, "x", atlasTexture.image?.height);
+  console.log("🎨 Texture properties:", {
+    format: atlasTexture.format,
+    type: atlasTexture.type,
+    colorSpace: atlasTexture.colorSpace,
+    minFilter: atlasTexture.minFilter,
+    magFilter: atlasTexture.magFilter,
+  });
 
   // Restore original state
   gl.setRenderTarget(originalRenderTarget);

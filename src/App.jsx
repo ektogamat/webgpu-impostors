@@ -8,6 +8,8 @@ import TreeOctahedralImpostorCompute from "./TreeOctahedralImpostorCompute"; // 
 import TreeOctahedralImpostorFieldCompute from "./TreeOctahedralImpostorFieldCompute"; // New: WebGPU Compute-based field with atlas caching
 import { Gltf, Loader, OrbitControls } from "@react-three/drei";
 import GridWrapper from "./GridWrapper";
+import TreeOctahedralImpostorInstanced from "./TreeOctahedralImpostorInstanced";
+import { Inspector } from "three/examples/jsm/inspector/Inspector.js";
 
 export default function App() {
   return (
@@ -17,19 +19,29 @@ export default function App() {
           extend(THREE);
           const renderer = new THREE.WebGPURenderer(props);
 
+          const inspector = new Inspector();
+          // Attach the inspector instance so we can expose runtime tools later
+          renderer.inspector = inspector;
+
           await renderer.init();
+
+          const parent = renderer.domElement.parentElement;
+          if (parent && !inspector.domElement.parentElement) {
+            parent.appendChild(inspector.domElement);
+          }
+
           return renderer;
         }}
         camera={{
           position: [7, 8, 15],
           fov: 30,
-          near: 0.5,
-          far: 1000,
+          near: 0.1,
+          far: 3000,
         }}
       >
         <Suspense fallback={null}>
           <SceneLight />
-          <OrbitControls maxPolarAngle={Math.PI / 2} />
+          <OrbitControls enableDamping={false} maxPolarAngle={Math.PI / 2} />
 
           {/* <TreeOctahedralImpostorField
             // modelPath="/tree.gltf"
@@ -56,37 +68,69 @@ export default function App() {
           {/* Uncomment to render hundreds of instances sharing a single atlas */}
           {/* Atlas is generated once and automatically cached for all instances */}
 
-          <TreeOctahedralImpostorFieldCompute
+          {/* OPTIMIZED: InstancedMesh for 10,000+ instances */}
+          <TreeOctahedralImpostorInstanced
             modelPath="/car.glb"
-            position={[0, -2, 0]}
-            count={500} // Hundreds of instances sharing the same atlas
-            areaSize={[250, 250]}
+            position={[0, 0, 0]}
+            count={1500} // 🎯 META: 10,000 instances!
+            areaSize={[250, 250]} // Larger area for 10k instances
             minHeight={0}
             maxHeight={0}
             minScale={0.8}
             maxScale={1}
             baseScale={[1.8, 1.8, 1.8]}
-            avoidRadius={6}
-            seed={2024}
-            gridSize={16}
+            avoidRadius={8}
+            seed={2}
+            gridSize={32}
             atlasSize={4096}
-            octType={0} // 0 = HEMI, 1 = FULL
+            octType={0}
             geometryArgs={[4, 4]}
             roughness={1}
             metalness={0}
             alphaTest={0.5}
             envMapIntensity={1}
-            // WebGPU Compute specific options
+            showWireframe={false}
+            maxVisibleDistance={500}
+            lodDistances={[50, 100, 200, 400]}
+            updateBatchSize={800}
+            optimizeSize={false}
+            enableFrustumCulling={true}
+          />
+
+          {/* Old version (slow, many components) */}
+          {/* <TreeOctahedralImpostorFieldCompute
+            modelPath="/car.glb"
+            position={[0, -2, 0]}
+            count={100}
+            areaSize={[50, 50]}
+            minHeight={0}
+            maxHeight={0}
+            minScale={0.8}
+            maxScale={1}
+            baseScale={[1.8, 1.8, 1.8]}
+            avoidRadius={3}
+            seed={2024}
+            gridSize={16}
+            atlasSize={2048}
+            octType={0}
+            geometryArgs={[4, 4]}
+            roughness={1}
+            metalness={0}
+            alphaTest={0.5}
+            envMapIntensity={1}
             usePostProcessing={true}
             brightness={1.0}
             contrast={1.0}
-            optimizeSize={true}
+            optimizeSize={false}
             atlasCoverage={1.0}
             usePostDilatation={false}
             dilationRadius={0}
             showWireframe={false}
             directionThresholdRadians={0.0872665}
-          />
+            maxVisibleDistance={200}
+            lodDistances={[30, 60, 120, 180]}
+            updateBatchSize={100}
+          /> */}
 
           {/* 🔥 NEW: WebGPU Compute-based Atlas Generation */}
           {/* Uncomment to use GPU compute shaders (faster, more efficient) */}

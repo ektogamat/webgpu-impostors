@@ -135,7 +135,14 @@ export function createAtlasPostProcessShader({
  * Helper function to create a StorageTexture for WebGPU compute shaders
  */
 export function createStorageTexture(width, height) {
-  return new THREE.StorageTexture(width, height);
+  // StorageTexture with explicit linear format (not SRGB)
+  // WebGPU storage binding requires RGBA8Unorm format
+  const storageTexture = new THREE.StorageTexture(width, height);
+
+  // Force linear color space (no SRGB conversion during storage)
+  storageTexture.colorSpace = THREE.NoColorSpace;
+
+  return storageTexture;
 }
 
 /**
