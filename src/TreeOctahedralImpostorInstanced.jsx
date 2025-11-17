@@ -412,7 +412,7 @@ export default function TreeOctahedralImpostorInstanced({
 
     const mat = new THREE.MeshBasicNodeMaterial();
     mat.transparent = true;
-    mat.side = THREE.DoubleSide;
+    mat.side = THREE.FrontSide;
     mat.depthWrite = false;
     mat.depthTest = true;
     mat.alphaTest = 0.1;
@@ -447,7 +447,7 @@ export default function TreeOctahedralImpostorInstanced({
     const sampledColor = atlasTexture.sample(cellUV);
 
     mat.colorNode = sampledColor.rgb;
-    mat.opacityNode = sampledColor.a;
+    mat.opacityNode = showWireframe ? 1.0 : sampledColor.a;
 
     return mat;
   }, [atlas, gridSize, showWireframe]);

@@ -54,21 +54,17 @@ const CustomGrid = ({
 
   // Calculate actual grid size in world units
   const worldSize = useMemo(() => size * unitScale, [size, unitScale]);
-  const gridSpacing = useMemo(
-    () => worldSize / divisions,
-    [worldSize, divisions]
-  );
 
-  // Create geometry for the grid plane
+  // Create fixed 1x1 geometry - pattern repetition is handled in shader
   const geometry = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(
-      worldSize,
-      worldSize,
-      divisions,
-      divisions
-    );
+    const geo = new THREE.PlaneGeometry(1, 1);
     return geo;
-  }, [worldSize, divisions]);
+  }, []);
+
+  // Combine worldSize scale with user-provided scale
+  const finalScale = useMemo(() => {
+    return [worldSize * scale[0], worldSize * scale[1], scale[2]];
+  }, [worldSize, scale]);
 
   // Create TSL shader material
   const material = useMemo(() => {
@@ -80,28 +76,30 @@ const CustomGrid = ({
     const opacityUniform = TSL.uniform(opacity);
     const dotRadiusUniform = TSL.uniform(dotRadius);
     const divisionsUniform = TSL.uniform(divisions);
+    const worldSizeUniform = TSL.uniform(worldSize);
 
-    // Create simple TSL nodes for grid pattern
+    // Get UV coordinates (0-1 range for the 1x1 plane)
     const uvCoords = TSL.uv();
-    const gridUv = TSL.mul(uvCoords, divisionsUniform);
+
+    // Scale UV by worldSize to get world coordinates, then divide by spacing to get grid cells
+    // This repeats the pattern across the entire grid
+    const gridSpacing = TSL.div(worldSizeUniform, divisionsUniform);
+    const worldPos = TSL.mul(uvCoords, worldSizeUniform);
+    const gridUv = TSL.div(worldPos, gridSpacing);
+
+    // Get fractional part to repeat pattern in each grid cell (0-1 range per cell)
     const gridPos = TSL.fract(gridUv);
 
-    // Calculate distance from grid center for each dot
+    // Calculate distance from grid cell center for each dot
     const center = TSL.vec2(0.5, 0.5);
     const dist = TSL.length(TSL.sub(gridPos, center));
 
-    // Create circular dots
+    // Create circular dots at grid intersections
     const dotMask = TSL.step(dist, dotRadiusUniform);
-
-    // Create simple grid pattern - just use mod without complex operations
-    const gridMask = TSL.step(0.1, TSL.mod(gridUv.x, 1.0));
-
-    // Combine dot and grid masks
-    const finalMask = TSL.mul(dotMask, gridMask);
 
     // Set the nodes for MeshStandardNodeMaterial
     mat.colorNode = TSL.color(gridColorUniform);
-    mat.opacityNode = TSL.mul(finalMask, opacityUniform);
+    mat.opacityNode = TSL.mul(dotMask, opacityUniform);
 
     // Set material properties
     mat.side = DoubleSide;
@@ -109,7 +107,7 @@ const CustomGrid = ({
     mat.depthWrite = false;
 
     return mat;
-  }, [color, opacity, dotRadius, divisions]);
+  }, [color, opacity, dotRadius, divisions, worldSize]);
 
   return (
     <mesh
@@ -118,7 +116,7 @@ const CustomGrid = ({
       material={material}
       position={position}
       rotation={rotation}
-      scale={scale}
+      scale={finalScale}
       {...props}
     />
   );

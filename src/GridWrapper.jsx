@@ -15,8 +15,8 @@ const GridWrapper = memo(() => {
       options: ["meters", "feet", "inches", "centimeters"],
       label: "Grid Unit",
     },
-    gridSize: { value: 20, min: 1, max: 50, label: "Grid Size" },
-    gridDivisions: { value: 40, min: 5, max: 100, label: "Grid Divisions" },
+    gridSize: { value: 120, min: 1, max: 250, label: "Grid Size" },
+    gridDivisions: { value: 140, min: 5, max: 400, label: "Grid Divisions" },
   });
 
   // Only render grid if showGrid is true

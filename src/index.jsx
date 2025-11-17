@@ -6,6 +6,13 @@ import { Leva } from "leva";
 createRoot(document.getElementById("root")).render(
   <>
     <App />
-    <Leva collapsed />
+    <Leva
+      collapsed
+      titleBar={{
+        drag: false,
+        title: "Impostors",
+        position: { x: -140, y: 4 },
+      }}
+    />
   </>
 );

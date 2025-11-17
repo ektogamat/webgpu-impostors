@@ -10,8 +10,21 @@ import { Gltf, Loader, OrbitControls } from "@react-three/drei";
 import GridWrapper from "./GridWrapper";
 import TreeOctahedralImpostorInstanced from "./TreeOctahedralImpostorInstanced";
 import { Inspector } from "three/examples/jsm/inspector/Inspector.js";
+import { Perf } from "./Perf";
+import { useControls } from "leva";
 
 export default function App() {
+  const { showInpostorWireframe, showOriginalModel } = useControls({
+    showInpostorWireframe: {
+      value: false,
+      label: "Show Inpostor Wireframe",
+    },
+    showOriginalModel: {
+      value: true,
+      label: "Show Original Model",
+    },
+  });
+
   return (
     <>
       <Canvas
@@ -41,7 +54,13 @@ export default function App() {
       >
         <Suspense fallback={null}>
           <SceneLight />
-          <OrbitControls enableDamping={false} maxPolarAngle={Math.PI / 2} />
+          <OrbitControls
+            maxDistance={150}
+            minDistance={10}
+            enableDamping={false}
+            maxPolarAngle={Math.PI / 2}
+          />
+          <Perf position="top-left" showInfo={true} />
 
           {/* <TreeOctahedralImpostorField
             // modelPath="/tree.gltf"
@@ -70,26 +89,22 @@ export default function App() {
 
           {/* OPTIMIZED: InstancedMesh for 10,000+ instances */}
           <TreeOctahedralImpostorInstanced
-            modelPath="/car.glb"
+            modelPath="/tree2.glb"
             position={[0, 0, 0]}
-            count={1500} // 🎯 META: 10,000 instances!
-            areaSize={[250, 250]} // Larger area for 10k instances
+            count={5000} // 🎯 META: 10,000 instances!
+            areaSize={[300, 300]} // Larger area for 10k instances
             minHeight={0}
             maxHeight={0}
-            minScale={0.8}
-            maxScale={1}
-            baseScale={[1.8, 1.8, 1.8]}
+            minScale={0.5}
+            maxScale={1.5}
+            baseScale={[1, 1, 1]}
             avoidRadius={8}
-            seed={2}
-            gridSize={32}
+            seed={22}
+            gridSize={24}
             atlasSize={4096}
             octType={0}
             geometryArgs={[4, 4]}
-            roughness={1}
-            metalness={0}
-            alphaTest={0.5}
-            envMapIntensity={1}
-            showWireframe={false}
+            showWireframe={showInpostorWireframe}
             maxVisibleDistance={500}
             lodDistances={[50, 100, 200, 400]}
             updateBatchSize={800}
@@ -184,7 +199,9 @@ export default function App() {
             envMapIntensity={1}
           /> */}
 
-          <Gltf src="/car.glb" position={[1, -1.2, 0]} scale={[1, 1, 1]} />
+          {showOriginalModel && (
+            <Gltf src="/tree2.glb" position={[0, -1.2, 0]} scale={[1, 1, 1]} />
+          )}
           <GridWrapper />
         </Suspense>
       </Canvas>
