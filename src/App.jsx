@@ -89,7 +89,7 @@ export default function App() {
 
           {/* OPTIMIZED: InstancedMesh for 10,000+ instances */}
           <TreeOctahedralImpostorInstanced
-            modelPath="/tree.glb"
+            modelPath="/car.glb"
             position={[0, 0, 0]}
             count={5000}
             areaSize={[300, 300]}
@@ -200,7 +200,7 @@ export default function App() {
           /> */}
 
           {showOriginalModel && (
-            <Gltf src="/tree.glb" position={[0, -0.9, 0]} scale={[1, 1, 1]} />
+            <Gltf src="/car.glb" position={[0, -0.9, 0]} scale={[1, 1, 1]} />
           )}
           <GridWrapper />
         </Suspense>
